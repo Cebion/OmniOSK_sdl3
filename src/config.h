@@ -1,7 +1,7 @@
 #ifndef OMNI_CONFIG_H
 #define OMNI_CONFIG_H
 
-#include <SDL.h>
+#include <SDL3/SDL.h>
 #include <stddef.h>
 
 #ifdef __cplusplus

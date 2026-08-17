@@ -17,14 +17,14 @@ static const KeyName key_names[] = {
     {"F12", SDLK_F12}, {"UP", SDLK_UP}, {"DOWN", SDLK_DOWN},
     {"LEFT", SDLK_LEFT}, {"RIGHT", SDLK_RIGHT}, {"RETURN", SDLK_RETURN},
     {"ENTER", SDLK_RETURN}, {"BACKSPACE", SDLK_BACKSPACE}, {"TAB", SDLK_TAB},
-    {"ESCAPE", SDLK_ESCAPE}, {"SPACE", SDLK_SPACE}, {"A", SDLK_a},
-    {"B", SDLK_b}, {"C", SDLK_c}, {"D", SDLK_d}, {"E", SDLK_e},
-    {"F", SDLK_f}, {"G", SDLK_g}, {"H", SDLK_h}, {"I", SDLK_i},
-    {"J", SDLK_j}, {"K", SDLK_k}, {"L", SDLK_l}, {"M", SDLK_m},
-    {"N", SDLK_n}, {"O", SDLK_o}, {"P", SDLK_p}, {"Q", SDLK_q},
-    {"R", SDLK_r}, {"S", SDLK_s}, {"T", SDLK_t}, {"U", SDLK_u},
-    {"V", SDLK_v}, {"W", SDLK_w}, {"X", SDLK_x}, {"Y", SDLK_y},
-    {"Z", SDLK_z}
+    {"ESCAPE", SDLK_ESCAPE}, {"SPACE", SDLK_SPACE}, {"A", SDLK_A},
+    {"B", SDLK_B}, {"C", SDLK_C}, {"D", SDLK_D}, {"E", SDLK_E},
+    {"F", SDLK_F}, {"G", SDLK_G}, {"H", SDLK_H}, {"I", SDLK_I},
+    {"J", SDLK_J}, {"K", SDLK_K}, {"L", SDLK_L}, {"M", SDLK_M},
+    {"N", SDLK_N}, {"O", SDLK_O}, {"P", SDLK_P}, {"Q", SDLK_Q},
+    {"R", SDLK_R}, {"S", SDLK_S}, {"T", SDLK_T}, {"U", SDLK_U},
+    {"V", SDLK_V}, {"W", SDLK_W}, {"X", SDLK_X}, {"Y", SDLK_Y},
+    {"Z", SDLK_Z}
 };
 
 static const char *env_value(const char *name)

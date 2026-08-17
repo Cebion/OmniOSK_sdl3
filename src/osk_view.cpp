@@ -107,9 +107,9 @@ static void output_size(OmniRuntime *runtime, int renderer_path, int *width, int
     *width = 1280;
     *height = 720;
     if (runtime->window != nullptr) {
-        SDL_GetWindowSize(runtime->window, width, height);
+        (void)SDL_GetWindowSize(runtime->window, width, height);
     } else if (renderer_path && runtime->renderer != nullptr) {
-        SDL_GetRendererOutputSize(runtime->renderer, width, height);
+        (void)SDL_GetRenderOutputSize(runtime->renderer, width, height);
     }
 }
 

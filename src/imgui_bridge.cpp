@@ -5,9 +5,9 @@
 
 #include "imgui.h"
 #include "backends/imgui_impl_opengl3.h"
-#include "backends/imgui_impl_sdl2.h"
+#include "backends/imgui_impl_sdl3.h"
 
-#include "backends/imgui_impl_sdlrenderer2.h"
+#include "backends/imgui_impl_sdlrenderer3.h"
 
 namespace {
 SDL_Window *gl_window = nullptr;
@@ -57,10 +57,10 @@ extern "C" int omni_imgui_gl_begin(SDL_Window *window, OmniRuntime *runtime)
         ImGui::CreateContext();
         ImGui::StyleColorsDark();
         configure_font(runtime->config);
-        if (!ImGui_ImplSDL2_InitForOpenGL(window, runtime->context) ||
+        if (!ImGui_ImplSDL3_InitForOpenGL(window, runtime->context) ||
             !ImGui_ImplOpenGL3_Init(glsl_version)) {
             omni_diag_once(12, OMNI_LOG_ERROR, "Dear ImGui OpenGL initialization failed");
-            ImGui_ImplSDL2_Shutdown();
+            ImGui_ImplSDL3_Shutdown();
             ImGui::DestroyContext();
             return 0;
         }
@@ -72,7 +72,7 @@ extern "C" int omni_imgui_gl_begin(SDL_Window *window, OmniRuntime *runtime)
         return 0;
     }
     ImGui_ImplOpenGL3_NewFrame();
-    ImGui_ImplSDL2_NewFrame();
+    ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
     return 1;
 }
@@ -94,7 +94,7 @@ extern "C" void omni_imgui_gl_shutdown(void)
         return;
     }
     ImGui_ImplOpenGL3_Shutdown();
-    ImGui_ImplSDL2_Shutdown();
+    ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
     gl_window = nullptr;
     gl_ready = false;
@@ -118,10 +118,10 @@ extern "C" int omni_imgui_renderer_begin(SDL_Renderer *renderer, OmniRuntime *ru
         ImGui::CreateContext();
         ImGui::StyleColorsDark();
         configure_font(runtime->config);
-        if (!ImGui_ImplSDL2_InitForSDLRenderer(runtime->window, renderer) ||
-            !ImGui_ImplSDLRenderer2_Init(renderer)) {
+        if (!ImGui_ImplSDL3_InitForSDLRenderer(runtime->window, renderer) ||
+            !ImGui_ImplSDLRenderer3_Init(renderer)) {
             omni_diag_once(14, OMNI_LOG_ERROR, "Dear ImGui SDL Renderer initialization failed");
-            ImGui_ImplSDL2_Shutdown();
+            ImGui_ImplSDL3_Shutdown();
             ImGui::DestroyContext();
             return 0;
         }
@@ -132,8 +132,8 @@ extern "C" int omni_imgui_renderer_begin(SDL_Renderer *renderer, OmniRuntime *ru
         omni_diag_once(15, OMNI_LOG_WARN, "a second SDL Renderer was presented; overlay remains pass-through");
         return 0;
     }
-    ImGui_ImplSDLRenderer2_NewFrame();
-    ImGui_ImplSDL2_NewFrame();
+    ImGui_ImplSDLRenderer3_NewFrame();
+    ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
     return 1;
 }
@@ -163,7 +163,7 @@ extern "C" void omni_imgui_renderer_draw(OmniRuntime *runtime, SDL_Renderer *ren
 {
     omni_osk_view_draw(runtime, 1);
     ImGui::Render();
-    ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), renderer);
+    ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), renderer);
 }
 
 extern "C" void omni_imgui_renderer_end(void)
@@ -175,8 +175,8 @@ extern "C" void omni_imgui_renderer_shutdown(void)
     if (!renderer_ready) {
         return;
     }
-    ImGui_ImplSDLRenderer2_Shutdown();
-    ImGui_ImplSDL2_Shutdown();
+    ImGui_ImplSDLRenderer3_Shutdown();
+    ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
     renderer_handle = nullptr;
     renderer_ready = false;

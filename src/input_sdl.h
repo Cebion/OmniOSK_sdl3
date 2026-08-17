@@ -10,9 +10,9 @@ extern "C" {
 
 typedef struct OmniSdlInput {
     int toggle_down;
-    Uint8 held[SDL_NUM_SCANCODES];
-    Uint8 pass_release[SDL_NUM_SCANCODES];
-    Uint8 suppressed[SDL_NUM_SCANCODES];
+    Uint8 held[SDL_SCANCODE_COUNT];
+    Uint8 pass_release[SDL_SCANCODE_COUNT];
+    Uint8 suppressed[SDL_SCANCODE_COUNT];
 } OmniSdlInput;
 
 void omni_sdl_input_init(OmniSdlInput *input);

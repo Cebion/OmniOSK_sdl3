@@ -168,15 +168,15 @@ int omni_runtime_process_event(OmniRuntime *runtime, SDL_Event *event, int text_
         return 0;
     }
     omni_runtime_tick(runtime);
-    if (event->type == SDL_QUIT) {
+    if (event->type == SDL_EVENT_QUIT) {
         omni_runtime_shutdown(runtime);
         return 0;
     }
-    if (!runtime->model.active && event->type == SDL_KEYDOWN &&
-        event->key.keysym.sym == runtime->config.toggle_key && !omni_runtime_has_presentation(runtime)) {
-        SDL_Scancode scancode = event->key.keysym.scancode;
-        if (scancode >= SDL_NUM_SCANCODES) {
-            scancode = SDL_GetScancodeFromKey(event->key.keysym.sym);
+    if (!runtime->model.active && event->type == SDL_EVENT_KEY_DOWN &&
+        event->key.key == runtime->config.toggle_key && !omni_runtime_has_presentation(runtime)) {
+        SDL_Scancode scancode = event->key.scancode;
+        if (scancode >= SDL_SCANCODE_COUNT) {
+            scancode = SDL_GetScancodeFromKey(event->key.key, NULL);
         }
         runtime->sdl_input.suppressed[scancode] = 1;
         omni_diag_once(17, OMNI_LOG_INFO, "toggle received before a presentation target; keeping OSK inactive");

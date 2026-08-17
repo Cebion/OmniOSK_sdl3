@@ -15,7 +15,7 @@ static OmniRuntime runtime;
 static OmniSymbols symbols;
 static pthread_once_t symbols_once = PTHREAD_ONCE_INIT;
 static _Thread_local int initializing;
-static Uint8 keyboard_shadow[SDL_NUM_SCANCODES];
+static bool keyboard_shadow[SDL_SCANCODE_COUNT];
 
 static void initialize(void)
 {
@@ -41,33 +41,33 @@ static void ensure_initialized(void)
 
 static int process_event(SDL_Event *event)
 {
-    int text_enabled = symbols.is_text_input_active == NULL || symbols.is_text_input_active() != SDL_FALSE;
+    int text_enabled = symbols.is_text_input_active == NULL || symbols.is_text_input_active(runtime.window);
     return omni_runtime_process_event(&runtime, event, text_enabled);
 }
 
-int SDL_Init(Uint32 flags)
+bool SDL_Init(SDL_InitFlags flags)
 {
-    int result;
+    bool result;
     ensure_initialized();
     if (symbols.init == NULL) {
-        return -1;
+        return false;
     }
     result = symbols.init(flags);
-    if (result == 0 && (flags & (SDL_INIT_VIDEO | SDL_INIT_EVENTS)) != 0) {
+    if (result && (flags & (SDL_INIT_VIDEO | SDL_INIT_EVENTS)) != 0) {
         (void)omni_runtime_ensure(&runtime);
     }
     return result;
 }
 
-int SDL_InitSubSystem(Uint32 flags)
+bool SDL_InitSubSystem(SDL_InitFlags flags)
 {
-    int result;
+    bool result;
     ensure_initialized();
     if (symbols.init_subsystem == NULL) {
-        return -1;
+        return false;
     }
     result = symbols.init_subsystem(flags);
-    if (result == 0 && (flags & (SDL_INIT_VIDEO | SDL_INIT_EVENTS)) != 0) {
+    if (result && (flags & (SDL_INIT_VIDEO | SDL_INIT_EVENTS)) != 0) {
         (void)omni_runtime_ensure(&runtime);
     }
     return result;
@@ -91,14 +91,14 @@ void SDL_Quit(void)
     }
 }
 
-SDL_Window *SDL_CreateWindow(const char *title, int x, int y, int w, int h, Uint32 flags)
+SDL_Window *SDL_CreateWindow(const char *title, int w, int h, SDL_WindowFlags flags)
 {
     SDL_Window *window;
     ensure_initialized();
     if (symbols.create_window == NULL) {
         return NULL;
     }
-    window = symbols.create_window(title, x, y, w, h, flags);
+    window = symbols.create_window(title, w, h, flags);
     return window;
 }
 
@@ -137,15 +137,15 @@ SDL_GLContext SDL_GL_CreateContext(SDL_Window *window)
     return context;
 }
 
-int SDL_GL_MakeCurrent(SDL_Window *window, SDL_GLContext context)
+bool SDL_GL_MakeCurrent(SDL_Window *window, SDL_GLContext context)
 {
-    int result;
+    bool result;
     ensure_initialized();
     if (symbols.gl_make_current == NULL) {
-        return -1;
+        return false;
     }
     result = symbols.gl_make_current(window, context);
-    if (result == 0) {
+    if (result) {
         if (runtime.context == context) {
             omni_runtime_set_window(&runtime, window);
         } else if (runtime.context == NULL && runtime.renderer == NULL) {
@@ -156,8 +156,9 @@ int SDL_GL_MakeCurrent(SDL_Window *window, SDL_GLContext context)
     return result;
 }
 
-void SDL_GL_DeleteContext(SDL_GLContext context)
+bool SDL_GL_DestroyContext(SDL_GLContext context)
 {
+    bool result = true;
     ensure_initialized();
     if (runtime.context == context) {
         if (SDL_GL_GetCurrentContext() == context) {
@@ -171,19 +172,20 @@ void SDL_GL_DeleteContext(SDL_GLContext context)
             runtime.window = NULL;
         }
     }
-    if (symbols.gl_delete_context != NULL) {
-        symbols.gl_delete_context(context);
+    if (symbols.gl_destroy_context != NULL) {
+        result = symbols.gl_destroy_context(context);
     }
+    return result;
 }
 
-SDL_Renderer *SDL_CreateRenderer(SDL_Window *window, int index, Uint32 flags)
+SDL_Renderer *SDL_CreateRenderer(SDL_Window *window, const char *name)
 {
     SDL_Renderer *renderer;
     ensure_initialized();
     if (symbols.create_renderer == NULL) {
         return NULL;
     }
-    renderer = symbols.create_renderer(window, index, flags);
+    renderer = symbols.create_renderer(window, name);
     if (renderer != NULL && runtime.renderer == NULL && runtime.context == NULL) {
         omni_runtime_set_renderer(&runtime, renderer);
         omni_runtime_set_window(&runtime, window);
@@ -191,16 +193,16 @@ SDL_Renderer *SDL_CreateRenderer(SDL_Window *window, int index, Uint32 flags)
     return renderer;
 }
 
-int SDL_CreateWindowAndRenderer(int width, int height, Uint32 flags,
-                                SDL_Window **window, SDL_Renderer **renderer)
+bool SDL_CreateWindowAndRenderer(const char *title, int width, int height, SDL_WindowFlags window_flags,
+                                  SDL_Window **window, SDL_Renderer **renderer)
 {
-    int result;
+    bool result;
     ensure_initialized();
     if (symbols.create_window_and_renderer == NULL) {
-        return -1;
+        return false;
     }
-    result = symbols.create_window_and_renderer(width, height, flags, window, renderer);
-    if (result == 0 && runtime.renderer == NULL && runtime.context == NULL) {
+    result = symbols.create_window_and_renderer(title, width, height, window_flags, window, renderer);
+    if (result && runtime.renderer == NULL && runtime.context == NULL) {
         omni_runtime_set_window(&runtime, *window);
         omni_runtime_set_renderer(&runtime, *renderer);
     }
@@ -223,83 +225,83 @@ void SDL_DestroyRenderer(SDL_Renderer *renderer)
     }
 }
 
-static int poll_native(SDL_Event *event)
+static bool poll_native(SDL_Event *event)
 {
     if (symbols.poll_event == NULL) {
-        return 0;
+        return false;
     }
     return symbols.poll_event(event);
 }
 
-int SDL_PollEvent(SDL_Event *event)
+bool SDL_PollEvent(SDL_Event *event)
 {
     SDL_Event scratch;
     SDL_Event *target = event == NULL ? &scratch : event;
     ensure_initialized();
     omni_runtime_tick(&runtime);
     for (;;) {
-        if (poll_native(target) != 0) {
+        if (poll_native(target)) {
             if (!process_event(target)) {
-                return 1;
+                return true;
             }
             continue;
         }
         if (omni_runtime_pop_generated(&runtime, target)) {
-            return 1;
+            return true;
         }
-        return 0;
+        return false;
     }
 }
 
-int SDL_WaitEvent(SDL_Event *event)
+bool SDL_WaitEvent(SDL_Event *event)
 {
     SDL_Event scratch;
     SDL_Event *target = event == NULL ? &scratch : event;
     ensure_initialized();
     omni_runtime_tick(&runtime);
     if (omni_runtime_pop_generated(&runtime, target)) {
-        return 1;
+        return true;
     }
     if (symbols.wait_event == NULL) {
-        return 0;
+        return false;
     }
-    while (symbols.wait_event(target) != 0) {
+    while (symbols.wait_event(target)) {
         if (!process_event(target)) {
-            return 1;
+            return true;
         }
         if (omni_runtime_pop_generated(&runtime, target)) {
-            return 1;
+            return true;
         }
     }
-    return 0;
+    return false;
 }
 
-int SDL_WaitEventTimeout(SDL_Event *event, int timeout)
+bool SDL_WaitEventTimeout(SDL_Event *event, Sint32 timeoutMS)
 {
     SDL_Event scratch;
     SDL_Event *target = event == NULL ? &scratch : event;
     ensure_initialized();
     omni_runtime_tick(&runtime);
     if (omni_runtime_pop_generated(&runtime, target)) {
-        return 1;
+        return true;
     }
     if (symbols.wait_event_timeout == NULL) {
-        return 0;
+        return false;
     }
-    while (symbols.wait_event_timeout(target, timeout) != 0) {
+    while (symbols.wait_event_timeout(target, timeoutMS)) {
         if (!process_event(target)) {
-            return 1;
+            return true;
         }
         if (omni_runtime_pop_generated(&runtime, target)) {
-            return 1;
+            return true;
         }
-        timeout = 0;
+        timeoutMS = 0;
     }
-    return 0;
+    return false;
 }
 
-int SDL_PeepEvents(SDL_Event *events, int numevents, SDL_eventaction action,
-                   Uint32 minType, Uint32 maxType)
+int SDL_PeepEvents(SDL_Event *events, int numevents, SDL_EventAction action,
+                    Uint32 minType, Uint32 maxType)
 {
     int count;
     int input_index;
@@ -318,7 +320,7 @@ int SDL_PeepEvents(SDL_Event *events, int numevents, SDL_eventaction action,
         for (source_index = 0; source_index < count; ++source_index) {
             SDL_Event current = events[source_index];
             int hidden = omni_runtime_active(&runtime) &&
-                         (current.type == SDL_KEYDOWN || current.type == SDL_KEYUP);
+                         (current.type == SDL_EVENT_KEY_DOWN || current.type == SDL_EVENT_KEY_UP);
             if (!hidden) {
                 events[output_index++] = current;
             }
@@ -344,27 +346,27 @@ int SDL_PeepEvents(SDL_Event *events, int numevents, SDL_eventaction action,
     return output_index;
 }
 
-int SDL_PushEvent(SDL_Event *event)
+bool SDL_PushEvent(SDL_Event *event)
 {
     ensure_initialized();
-    return symbols.push_event == NULL ? -1 : symbols.push_event(event);
+    return symbols.push_event == NULL ? false : symbols.push_event(event);
 }
 
-const Uint8 *SDL_GetKeyboardState(int *numkeys)
+const bool *SDL_GetKeyboardState(int *numkeys)
 {
-    const Uint8 *native_state;
+    const bool *native_state;
     int native_count = 0;
     ensure_initialized();
     if (!omni_runtime_active(&runtime) || symbols.get_keyboard_state == NULL) {
         return symbols.get_keyboard_state == NULL ? keyboard_shadow : symbols.get_keyboard_state(numkeys);
     }
     native_state = symbols.get_keyboard_state(&native_count);
-    if (native_count > SDL_NUM_SCANCODES && native_state != NULL) {
-        native_count = SDL_NUM_SCANCODES;
+    if (native_count > SDL_SCANCODE_COUNT && native_state != NULL) {
+        native_count = SDL_SCANCODE_COUNT;
     }
     memset(keyboard_shadow, 0, sizeof(keyboard_shadow));
     if (numkeys != NULL) {
-        *numkeys = SDL_NUM_SCANCODES;
+        *numkeys = SDL_SCANCODE_COUNT;
     }
     (void)native_state;
     return keyboard_shadow;
@@ -374,38 +376,38 @@ SDL_Keymod SDL_GetModState(void)
 {
     ensure_initialized();
     if (omni_runtime_active(&runtime)) {
-        return KMOD_NONE;
+        return SDL_KMOD_NONE;
     }
-    return symbols.get_mod_state == NULL ? KMOD_NONE : symbols.get_mod_state();
+    return symbols.get_mod_state == NULL ? SDL_KMOD_NONE : symbols.get_mod_state();
 }
 
-SDL_bool SDL_HasEvent(Uint32 type)
+bool SDL_HasEvent(Uint32 type)
 {
     SDL_Event event;
     ensure_initialized();
     if (omni_runtime_peek_generated(&runtime, &event) && event.type == type) {
-        return 1;
+        return true;
     }
-    if (omni_runtime_active(&runtime) && (type == SDL_KEYDOWN || type == SDL_KEYUP)) {
-        return SDL_FALSE;
+    if (omni_runtime_active(&runtime) && (type == SDL_EVENT_KEY_DOWN || type == SDL_EVENT_KEY_UP)) {
+        return false;
     }
-    if (symbols.has_event != NULL && symbols.has_event(type) != 0) {
-        return 1;
+    if (symbols.has_event != NULL && symbols.has_event(type)) {
+        return true;
     }
-    return 0;
+    return false;
 }
 
-SDL_bool SDL_HasEvents(Uint32 minType, Uint32 maxType)
+bool SDL_HasEvents(Uint32 minType, Uint32 maxType)
 {
     SDL_Event event;
     ensure_initialized();
     if (omni_generated_peek_matching(&runtime.generated, minType, maxType, &event)) {
-        return 1;
+        return true;
     }
-    if (omni_runtime_active(&runtime) && minType <= SDL_KEYUP && maxType >= SDL_KEYDOWN) {
-        return SDL_FALSE;
+    if (omni_runtime_active(&runtime) && minType <= SDL_EVENT_KEY_UP && maxType >= SDL_EVENT_KEY_DOWN) {
+        return false;
     }
-    return symbols.has_events != NULL && symbols.has_events(minType, maxType) != 0;
+    return symbols.has_events != NULL && symbols.has_events(minType, maxType);
 }
 
 void SDL_FlushEvent(Uint32 type)
@@ -446,30 +448,42 @@ void SDL_FlushEvents(Uint32 minType, Uint32 maxType)
     }
 }
 
-Uint8 SDL_EventState(Uint32 type, int state)
+void SDL_SetEventEnabled(Uint32 type, bool enabled)
 {
     ensure_initialized();
-    return symbols.event_state == NULL ? SDL_ENABLE : symbols.event_state(type, state);
+    if (symbols.set_event_enabled != NULL) {
+        symbols.set_event_enabled(type, enabled);
+    }
 }
 
-void SDL_GL_SwapWindow(SDL_Window *window)
+bool SDL_EventEnabled(Uint32 type)
 {
+    ensure_initialized();
+    return symbols.event_enabled == NULL ? true : symbols.event_enabled(type);
+}
+
+bool SDL_GL_SwapWindow(SDL_Window *window)
+{
+    bool result = true;
     ensure_initialized();
     if (omni_runtime_active(&runtime)) {
         (void)omni_render_gl(window, &runtime);
     }
     if (symbols.gl_swap_window != NULL) {
-        symbols.gl_swap_window(window);
+        result = symbols.gl_swap_window(window);
     }
+    return result;
 }
 
-void SDL_RenderPresent(SDL_Renderer *renderer)
+bool SDL_RenderPresent(SDL_Renderer *renderer)
 {
+    bool result = true;
     ensure_initialized();
     if (omni_runtime_active(&runtime)) {
         (void)omni_render_sdlrenderer(renderer, &runtime);
     }
     if (symbols.render_present != NULL) {
-        symbols.render_present(renderer);
+        result = symbols.render_present(renderer);
     }
+    return result;
 }
