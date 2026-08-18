@@ -106,6 +106,16 @@ static void output_size(OmniRuntime *runtime, int renderer_path, int *width, int
 {
     *width = 1280;
     *height = 720;
+    if (renderer_path && runtime->renderer != nullptr) {
+        SDL_RendererLogicalPresentation mode;
+        if (SDL_GetRenderLogicalPresentation(runtime->renderer, width, height, &mode) &&
+            mode != SDL_LOGICAL_PRESENTATION_DISABLED) {
+            /* Draw calls submitted through this renderer are interpreted in its
+             * logical coordinate space, not real window pixels, so lay out in that
+             * same space regardless of the real window size. */
+            return;
+        }
+    }
     if (runtime->window != nullptr) {
         (void)SDL_GetWindowSize(runtime->window, width, height);
     } else if (renderer_path && runtime->renderer != nullptr) {

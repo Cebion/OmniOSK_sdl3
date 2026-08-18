@@ -134,6 +134,19 @@ extern "C" int omni_imgui_renderer_begin(SDL_Renderer *renderer, OmniRuntime *ru
     }
     ImGui_ImplSDLRenderer3_NewFrame();
     ImGui_ImplSDL3_NewFrame();
+    {
+        int logical_w, logical_h;
+        SDL_RendererLogicalPresentation mode;
+        if (SDL_GetRenderLogicalPresentation(renderer, &logical_w, &logical_h, &mode) &&
+            mode != SDL_LOGICAL_PRESENTATION_DISABLED) {
+            /* Draw calls submitted to this renderer land in its logical
+             * coordinate space, not real window pixels, so ImGui's own
+             * clipping needs to agree with that same space. */
+            ImGuiIO &io = ImGui::GetIO();
+            io.DisplaySize = ImVec2((float)logical_w, (float)logical_h);
+            io.DisplayFramebufferScale = ImVec2(1.0f, 1.0f);
+        }
+    }
     ImGui::NewFrame();
     return 1;
 }
