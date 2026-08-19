@@ -154,5 +154,18 @@ int main(void)
     CHECK(omni_sdl_input_handle(&input, &config, &model, &generated, &event, 1) == 1);
     CHECK(omni_generated_pop(&generated, &event) == 1 && event.type == SDL_TEXTINPUT && strcmp(event.text.text, "a") == 0);
     CHECK(omni_generated_empty(&generated));
+
+    /* sdl12-compat presents keyboard events to the game using SDL 1.2's own
+     * keysym numbering (e.g. F12 is 293, not SDL2's SDLK_F12/1073741893) -
+     * key_matches() must recognize the configured toggle key either way. */
+    CHECK(omni_sdl12_equivalent(SDLK_F12) == 293);
+    omni_config_defaults(&config);
+    CHECK(omni_osk_model_init(&model, &config) == 0);
+    omni_sdl_input_init(&input);
+    omni_generated_clear(&generated);
+    event = key_event(SDL_KEYDOWN, (SDL_Keycode)293);
+    CHECK(omni_sdl_input_handle(&input, &config, &model, &generated, &event, 1) == 1);
+    CHECK(model.active == 1);
+
     return 0;
 }

@@ -3,6 +3,9 @@
 #include "diagnostics.h"
 
 #include <string.h>
+#ifdef OMNI_HAVE_SDL12_BRIDGE
+#include <dlfcn.h>
+#endif
 
 #ifdef OMNI_HAVE_EVDEV
 static void raw_emit_result(OmniRuntime *runtime, const OmniModelResult *result)
@@ -162,8 +165,61 @@ void omni_runtime_shutdown(OmniRuntime *runtime)
     omni_osk_model_deactivate(&runtime->model, 1);
 }
 
+static void discover_presentation(OmniRuntime *runtime);
+
+#ifdef OMNI_HAVE_SDL12_BRIDGE
+/* The reused/discovered renderer is normally created by sdl12-compat with
+ * vsync on. Under OMNI_SDL12_BRIDGE, each real frame gets TWO presents on
+ * that same renderer - sdl12-compat's own internal one (invisible to us,
+ * happens inside the SDL_UpdateRect/SDL_Flip hook's call-through) and our
+ * own overlay present right after it. With vsync on, each present blocks
+ * for the next vsync tick, so the two presents land on two SEPARATE real
+ * vsync intervals: one showing the fresh game frame with no overlay, the
+ * next showing an already-stale backbuffer (typical double/triple-buffer
+ * swap behavior) with the overlay drawn on top - alternating every real
+ * frame, visible as fast flicker (confirmed on real hardware: RG351V/
+ * AmberELEC, opengles2 accelerated renderer, PRESENTVSYNC set).
+ *
+ * Disabling vsync only while the overlay is actually open makes both
+ * presents happen back-to-back with no forced wait between them, so the
+ * display's own refresh effectively only ever samples the second (ours,
+ * always drawn last) - the first, overlay-less present is overwritten
+ * before it can actually reach the screen. Restored to vsync-on once the
+ * overlay closes so the game's own normal rendering isn't affected outside
+ * of text-entry moments. Resolved via dlsym rather than linked directly
+ * since SDL_RenderSetVSync only exists in SDL2 2.0.18+ - skip gracefully
+ * on an older runtime SDL2 instead of failing to load. */
+typedef int (*OmniRenderSetVSyncFn)(SDL_Renderer *, int);
+
+static void sync_vsync_to_active_state(OmniRuntime *runtime)
+{
+    static OmniRenderSetVSyncFn set_vsync;
+    static int resolved;
+    static int last_applied = -1;
+    int want_vsync;
+    if (runtime->renderer == NULL) {
+        return;
+    }
+    if (!resolved) {
+        set_vsync = (OmniRenderSetVSyncFn)dlsym(RTLD_DEFAULT, "SDL_RenderSetVSync");
+        resolved = 1;
+    }
+    if (set_vsync == NULL) {
+        return;
+    }
+    want_vsync = runtime->model.active ? 0 : 1;
+    if (want_vsync == last_applied) {
+        return;
+    }
+    if (set_vsync(runtime->renderer, want_vsync) == 0) {
+        last_applied = want_vsync;
+    }
+}
+#endif
+
 int omni_runtime_process_event(OmniRuntime *runtime, SDL_Event *event, int text_enabled)
 {
+    int result;
     if (!omni_runtime_ensure(runtime) || runtime->state != OMNI_RUNTIME_READY) {
         return 0;
     }
@@ -172,8 +228,11 @@ int omni_runtime_process_event(OmniRuntime *runtime, SDL_Event *event, int text_
         omni_runtime_shutdown(runtime);
         return 0;
     }
+    discover_presentation(runtime);
     if (!runtime->model.active && event->type == SDL_KEYDOWN &&
-        event->key.keysym.sym == runtime->config.toggle_key && !omni_runtime_has_presentation(runtime)) {
+        (event->key.keysym.sym == runtime->config.toggle_key ||
+         event->key.keysym.sym == omni_sdl12_equivalent(runtime->config.toggle_key)) &&
+        !omni_runtime_has_presentation(runtime)) {
         SDL_Scancode scancode = event->key.keysym.scancode;
         if (scancode >= SDL_NUM_SCANCODES) {
             scancode = SDL_GetScancodeFromKey(event->key.keysym.sym);
@@ -182,9 +241,13 @@ int omni_runtime_process_event(OmniRuntime *runtime, SDL_Event *event, int text_
         omni_diag_once(17, OMNI_LOG_INFO, "toggle received before a presentation target; keeping OSK inactive");
         return 1;
     }
-    return omni_sdl_input_handle(&runtime->sdl_input, &runtime->config,
-                                 &runtime->model, &runtime->generated,
-                                 event, text_enabled);
+    result = omni_sdl_input_handle(&runtime->sdl_input, &runtime->config,
+                                   &runtime->model, &runtime->generated,
+                                   event, text_enabled);
+#ifdef OMNI_HAVE_SDL12_BRIDGE
+    sync_vsync_to_active_state(runtime);
+#endif
+    return result;
 }
 
 int omni_runtime_pop_generated(OmniRuntime *runtime, SDL_Event *event)
@@ -205,6 +268,54 @@ int omni_runtime_active(const OmniRuntime *runtime)
 int omni_runtime_has_presentation(const OmniRuntime *runtime)
 {
     return runtime->context != NULL || runtime->renderer != NULL;
+}
+
+/* For a target reached via sdl12-compat, the window/renderer sdl12-compat
+ * creates internally to implement old-style SDL_SetVideoMode()+SDL_Surface
+ * rendering is invisible to the normal SDL_CreateWindow/SDL_CreateRenderer/
+ * SDL_GL_CreateContext preload hooks (same RTLD_LOCAL-isolation reason the
+ * event struct layout needed a bridge for - see sdl12_bridge.c). This
+ * queries real SDL2 directly (which OmniOSK links normally, and which is
+ * the same loaded SDL2 instance sdl12-compat itself resolves to, since both
+ * paths resolve the same soname through the same search path) to discover
+ * whatever window already exists instead of waiting for a creation call
+ * that will never come through an interceptable path. */
+static void discover_presentation(OmniRuntime *runtime)
+{
+    SDL_Window *window;
+    SDL_Renderer *renderer;
+    if (omni_runtime_has_presentation(runtime)) {
+        return;
+    }
+    window = SDL_GetKeyboardFocus();
+    if (window == NULL) {
+        return;
+    }
+    omni_runtime_set_window(runtime, window);
+    renderer = SDL_GetRenderer(window);
+    if (renderer == NULL) {
+        renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
+        if (renderer == NULL) {
+            omni_diag_once(30, OMNI_LOG_WARN, "presentation discovery found a window but could not get or create a renderer for it");
+            return;
+        }
+        omni_diag_once(31, OMNI_LOG_INFO, "presentation discovery created its own renderer on the discovered window");
+    } else {
+        omni_diag_once(32, OMNI_LOG_INFO, "presentation discovery reused an existing renderer on the discovered window");
+    }
+    {
+        SDL_RendererInfo info;
+        if (SDL_GetRendererInfo(renderer, &info) == 0) {
+            omni_diag_once(33, OMNI_LOG_INFO,
+                           "discovered renderer: name=%s flags=0x%x (SOFTWARE=%d ACCELERATED=%d PRESENTVSYNC=%d TARGETTEXTURE=%d)",
+                           info.name, (unsigned)info.flags,
+                           (info.flags & SDL_RENDERER_SOFTWARE) != 0,
+                           (info.flags & SDL_RENDERER_ACCELERATED) != 0,
+                           (info.flags & SDL_RENDERER_PRESENTVSYNC) != 0,
+                           (info.flags & SDL_RENDERER_TARGETTEXTURE) != 0);
+        }
+    }
+    omni_runtime_set_renderer(runtime, renderer);
 }
 
 void omni_runtime_set_window(OmniRuntime *runtime, SDL_Window *window)

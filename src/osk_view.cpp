@@ -111,6 +111,23 @@ static void output_size(OmniRuntime *runtime, int renderer_path, int *width, int
     } else if (renderer_path && runtime->renderer != nullptr) {
         SDL_GetRendererOutputSize(runtime->renderer, width, height);
     }
+    /* A renderer with its own logical size set (SDL_RenderSetLogicalSize)
+     * letterboxes/scales a lower internal resolution up to fill a
+     * physically larger window - our own draw calls go through that same
+     * renderer and get auto-scaled the same way, so layout math (anchor
+     * positions, margins) needs to happen in that logical space too, not
+     * the window's raw physical pixels, or everything ends up scaled
+     * twice. See the matching override in imgui_bridge.cpp's
+     * omni_imgui_renderer_begin() for the ImGui-internal half of this. */
+    if (renderer_path && runtime->renderer != nullptr) {
+        int logical_w = 0;
+        int logical_h = 0;
+        SDL_RenderGetLogicalSize(runtime->renderer, &logical_w, &logical_h);
+        if (logical_w > 0 && logical_h > 0) {
+            *width = logical_w;
+            *height = logical_h;
+        }
+    }
 }
 
 static void position_for_anchor(const OmniConfig &config, int output_width, int output_height,

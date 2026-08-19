@@ -19,6 +19,7 @@ void omni_sdl_input_init(OmniSdlInput *input);
 int omni_sdl_input_handle(OmniSdlInput *input, const OmniConfig *config,
                           OmniOskModel *model, OmniGeneratedQueue *generated,
                           SDL_Event *event, int text_input_enabled);
+SDL_Keycode omni_sdl12_equivalent(SDL_Keycode sdl2_key);
 
 #ifdef __cplusplus
 }

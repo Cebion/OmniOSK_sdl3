@@ -2,6 +2,7 @@
 
 #include "diagnostics.h"
 
+#include <stdio.h>
 #include <string.h>
 
 void omni_sdl_input_init(OmniSdlInput *input)
@@ -9,9 +10,48 @@ void omni_sdl_input_init(OmniSdlInput *input)
     memset(input, 0, sizeof(*input));
 }
 
+/* sdl12-compat translates every keyboard event it hands to the game back
+ * into real SDL 1.2's own keysym numbering (Keysym20to12() in
+ * SDL12_compat.c) - that's the entire point of the shim. SDL 1.2's and
+ * SDL2's keysym values are numerically identical for printable/ASCII-range
+ * keys, but diverge for non-printable ones (SDL2 introduced the
+ * SDLK_SCANCODE_MASK-based scheme for those). A game reached only through
+ * sdl12-compat never produces SDL2-numbered non-printable keysyms, so
+ * key_matches() must also check against the SDL 1.2 value for the
+ * configured key. Values below are from SDL 1.2's own SDL_keysym.h,
+ * unchanged in decades.
+ */
+SDL_Keycode omni_sdl12_equivalent(SDL_Keycode sdl2_key)
+{
+    switch (sdl2_key) {
+        case SDLK_BACKSPACE: return 8;
+        case SDLK_TAB:       return 9;
+        case SDLK_RETURN:    return 13;
+        case SDLK_ESCAPE:    return 27;
+        case SDLK_UP:        return 273;
+        case SDLK_DOWN:      return 274;
+        case SDLK_RIGHT:     return 275;
+        case SDLK_LEFT:      return 276;
+        case SDLK_F1:        return 282;
+        case SDLK_F2:        return 283;
+        case SDLK_F3:        return 284;
+        case SDLK_F4:        return 285;
+        case SDLK_F5:        return 286;
+        case SDLK_F6:        return 287;
+        case SDLK_F7:        return 288;
+        case SDLK_F8:        return 289;
+        case SDLK_F9:        return 290;
+        case SDLK_F10:       return 291;
+        case SDLK_F11:       return 292;
+        case SDLK_F12:       return 293;
+        case SDLK_LSHIFT:    return 304;
+        default:             return sdl2_key;
+    }
+}
+
 static int key_matches(SDL_Keycode key, SDL_Keycode configured)
 {
-    return key == configured;
+    return key == configured || key == omni_sdl12_equivalent(configured);
 }
 
 static int emit_buffer(const OmniConfig *config, OmniOskModel *model,
@@ -113,6 +153,17 @@ int omni_sdl_input_handle(OmniSdlInput *input, const OmniConfig *config,
     SDL_Scancode scancode;
     OmniModelResult model_result;
     if (event->type != SDL_KEYDOWN && event->type != SDL_KEYUP) {
+        if (model->active &&
+            (event->type == SDL_MOUSEMOTION || event->type == SDL_MOUSEBUTTONDOWN ||
+             event->type == SDL_MOUSEBUTTONUP)) {
+            /* While the overlay is open, it should be the exclusive input
+             * target - a game whose primary controls route through mouse
+             * events (e.g. a gptokeyb left-stick-as-mouse-movement mapping)
+             * would otherwise keep receiving them underneath the overlay,
+             * moving the player around while the user thinks they're only
+             * navigating the keyboard. */
+            return 1;
+        }
         return model->active && (event->type == SDL_TEXTINPUT || event->type == SDL_TEXTEDITING);
     }
     key = event->key.keysym.sym;

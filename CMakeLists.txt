@@ -7,6 +7,17 @@ option(OMNI_BUILD_EVDEV "Build the optional evdev/uinput backend" ON)
 option(OMNI_BUILD_RENDERER_TEST "Build the SDL Renderer fixture" ${OMNI_BUILD_TESTS})
 set(OMNI_SDL2_MIN_VERSION "2.0.18" CACHE STRING "Minimum SDL2 version for the Dear ImGui SDL Renderer backend")
 
+# For a target reached only through sdl12-compat: the game (and sdl12-compat
+# itself) speak real SDL 1.2's ABI, which has a completely different
+# SDL_Event memory layout than SDL2 (Uint8 type vs Uint32 type, among other
+# differences) - reading events with this build's normal SDL2-typed code
+# silently misreads garbage. When ON, src/sdl12_bridge.c is compiled
+# separately against real SDL 1.2 headers to decode the raw event buffer
+# correctly before the rest of this SDL2-typed codebase ever touches it.
+# Leave OFF for a genuinely SDL2-native target game.
+option(OMNI_SDL12_BRIDGE "Decode events using real SDL 1.2 struct layout (for games reached via sdl12-compat)" OFF)
+set(OMNI_SDL12_INCLUDE_DIR "/usr/include" CACHE PATH "Directory containing SDL/SDL.h (real SDL 1.2 headers)")
+
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 11)
@@ -46,6 +57,15 @@ set(OMNI_CORE_SOURCES
 if (OMNI_BUILD_EVDEV)
     list(APPEND OMNI_CORE_SOURCES src/input_evdev.c src/uinput_keyboard.c)
 endif()
+if (OMNI_SDL12_BRIDGE)
+    if (NOT EXISTS "${OMNI_SDL12_INCLUDE_DIR}/SDL/SDL.h")
+        message(FATAL_ERROR "SDL 1.2 headers not found at ${OMNI_SDL12_INCLUDE_DIR}/SDL/SDL.h - set -DOMNI_SDL12_INCLUDE_DIR")
+    endif()
+    list(APPEND OMNI_CORE_SOURCES src/sdl12_bridge.c)
+    set_source_files_properties(src/sdl12_bridge.c PROPERTIES
+        INCLUDE_DIRECTORIES "${OMNI_SDL12_INCLUDE_DIR}"
+    )
+endif()
 
 set(OMNI_IMGUI_SOURCES
     "${IMGUI_DIR}/imgui.cpp"
@@ -84,6 +104,9 @@ target_compile_definitions(omni_osk PRIVATE
 )
 if (OMNI_BUILD_EVDEV)
     target_compile_definitions(omni_osk PRIVATE OMNI_HAVE_EVDEV=1)
+endif()
+if (OMNI_SDL12_BRIDGE)
+    target_compile_definitions(omni_osk PRIVATE OMNI_HAVE_SDL12_BRIDGE=1)
 endif()
 target_include_directories(omni_osk PRIVATE
     src

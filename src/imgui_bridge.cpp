@@ -134,6 +134,28 @@ extern "C" int omni_imgui_renderer_begin(SDL_Renderer *renderer, OmniRuntime *ru
     }
     ImGui_ImplSDLRenderer2_NewFrame();
     ImGui_ImplSDL2_NewFrame();
+    /* ImGui's own SDL2 backend sets io.DisplaySize from the real window's
+     * raw pixel size, with no awareness of SDL_RenderSetLogicalSize() -
+     * a real mismatch when the target sets one (a lower internal
+     * resolution letterboxed/scaled up to fill a physically larger
+     * window, e.g. sdl12-compat presenting a 640x400 game at a real
+     * 1280x720 fullscreen window on a higher-res device). Every OmniOSK
+     * draw call goes through this same renderer, which auto-scales
+     * logical-space coordinates to physical pixels transparently - so
+     * ImGui needs to be told to lay out in that same logical space,
+     * or its own physical-pixel-sized layout gets scaled a second time
+     * on top of SDL2's own scaling. Confirmed on real hardware (ROCKNIX/
+     * RK3566, 1280x720 real window over a 640x400 logical game): the
+     * overlay's own keyboard grid rendered stretched and positioned
+     * mostly off-screen without this override. */
+    {
+        int logical_w = 0;
+        int logical_h = 0;
+        SDL_RenderGetLogicalSize(renderer, &logical_w, &logical_h);
+        if (logical_w > 0 && logical_h > 0) {
+            ImGui::GetIO().DisplaySize = ImVec2((float)logical_w, (float)logical_h);
+        }
+    }
     ImGui::NewFrame();
     return 1;
 }
